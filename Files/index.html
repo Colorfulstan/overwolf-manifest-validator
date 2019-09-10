@@ -1,0 +1,166 @@
+﻿<!DOCTYPE html>
+<html>
+<head>
+	<link rel="stylesheet" href="style.css" />
+	<meta content="text/html; charset=utf-8" http-equiv="Content-Type">
+	<title>Overwolf Manifest validator</title>
+	<script>
+		const MANIFEST_SCHEMA_URL = 'https://raw.githubusercontent.com/overwolf/community-gists/master/overwolf-manifest-schema.json'
+
+		function validatingManifestFromURL(overwolfURL = "") {
+			if (overwolfURL == "") {
+				throw new Error('no url for manifest available')
+			}
+			let manifestSchemaPromise = loadingManifestSchema()
+			let appManifestPromise = loadingAppManifestFromURL(overwolfURL)
+
+			let manifest = null
+
+			return Promise.all([manifestSchemaPromise, appManifestPromise])
+				.then(([schema, appManifest]) => {
+					manifest = appManifest
+					console.log(appManifest)
+					return validating(appManifest, schema)
+				})
+				.then(result => {
+					$('#errors').empty()
+					$('#errors').append('<li class="success">Manifest is valid</li>')
+				})
+				.catch(errors => {
+					$('#errors').empty()
+					errors.forEach(ajvError => {
+						let data = eval('manifest' + ajvError.dataPath)
+						$('#errors').append(`<li class="danger">"${JSON.stringify(data)}" (${ajvError.dataPath}) ${ajvError.message}</li>`)
+					})
+				})
+		}
+
+		function validating(manifest, schema) {
+			let ajv = new Ajv({v5: false, validateSchema: true})
+			return new Promise((resolve, reject) => {
+				var valid = ajv.validate(schema, manifest)
+				if (valid) {
+					resolve()
+				} else {
+					console.log(ajv.errors)
+					reject(ajv.errors)
+				}
+			})
+		}
+
+		function loadingAppManifestFromURL(overwolfURL) {
+			return new Promise((resolve, reject) => {
+				$.ajax({
+					method: 'GET',
+					url: overwolfURL,
+					dataType: "json",
+					success: function (content, status, options) {
+						console.log('manifest loaded:', content)
+						resolve(content)
+					},
+					error: function () {
+						console.log('error while loading manifest:', arguments)
+						reject(arguments)
+					}
+				})
+			})
+		}
+
+		function loadingManifestSchema() {
+			return new Promise((resolve, reject) => {
+				$.ajax({
+					method: 'GET',
+					url: MANIFEST_SCHEMA_URL,
+					dataType: "json",
+					converters: {
+						"text json": function (result) {
+							// remove all comments
+							let newresult = result.replace(/(\/\*([^*]|[\r\n]|(\*+([^*/]|[\r\n])))*\*+\/)|(\/\/\*+.*)/g, '')
+							// make case insensitive flag compatible for JS
+							newresult = newresult.replace(/\(\?\i\)(.*)/g, "$1")
+
+							// remove tabs
+							newresult = newresult.replace(/[\r\n\t]/g, '')
+							return JSON.parse(newresult)
+						}
+					},
+					success: function (content, status, options) {
+						console.log('manifest schema loaded:', arguments)
+						resolve(content)
+					},
+					error: function () {
+						console.log('error while loading manifest schema:', arguments)
+						reject(arguments)
+					}
+				})
+			})
+		}
+
+		function choosingFile() {
+			return new Promise((resolve, reject) => {
+				overwolf.utils.openFilePicker('manifest.json', function (result) {
+					if (result.status == 'success') {
+						$('#manifest-url').text(result.url)
+						resolve(result.url)
+					} else {
+						console.error('could not select manifest file: ', result)
+						reject(result)
+					}
+				})
+			}).then(overwolfFileURL => {
+				return validatingManifestFromURL(overwolfFileURL)
+			})
+		}
+	</script>
+	<script>
+	function dragResize(edge) {
+		overwolf.windows.getCurrentWindow(function (result) {
+			if (result.status === "success") {
+				overwolf.windows.dragResize(result.window.id, edge);
+			}
+		});
+	};
+
+	function dragMove() {
+		overwolf.windows.getCurrentWindow(function (result) {
+			if (result.status === "success") {
+				overwolf.windows.dragMove(result.window.id);
+			}
+		});
+	};
+
+	function closeWindow() {
+		overwolf.windows.getCurrentWindow(function (result) {
+			if (result.status === "success") {
+				overwolf.windows.close(result.window.id);
+			}
+		});
+	};
+</script>
+</head>
+
+<body>
+<div class="resizeGrip" id="resizeGripTopLeft" onmousedown="dragResize('TopLeft');"></div>
+<div class="resizeGrip" id="resizeGripTop" onmousedown="dragResize('Top');"></div>
+<div class="resizeGrip" id="resizeGripTopRight" onmousedown="dragResize('TopRight');"></div>
+<div class="resizeGrip" id="resizeGripRight" onmousedown="dragResize('Right');"></div>
+<div class="resizeGrip" id="resizeGripBottomRight" onmousedown="dragResize('BottomRight');"></div>
+<div class="resizeGrip" id="resizeGripBottom" onmousedown="dragResize('Bottom');"></div>
+<div class="resizeGrip" id="resizeGripBottomLeft" onmousedown="dragResize('BottomLeft');"></div>
+<div class="resizeGrip" id="resizeGripLeft" onmousedown="dragResize('Left');"></div>
+<div id="content" onmousedown="dragMove()">
+	<p>Note: Since there does not seem a way to make ajv handle (?i) modifier for regex strings, it will just get
+	   removed. So regex in Overwolfs JSON schema will be evaluated case sensitive.</p>
+	<p id="manifest-url">
+	<p>
+		<button onclick="choosingFile()">select manifest</button>
+		<button onclick="validatingManifestFromURL($('#manifest-url').text())">validate again</button>
+	<ul id="errors">
+
+	</ul>
+	<button onclick="closeWindow()">Close</button>
+</div>
+<script type="text/javascript" src="../jquery-3.1.1.min.js"></script>
+<script src="../ajv.min.js"></script>
+</body>
+</html>
